@@ -1,0 +1,75 @@
+{
+  "name": "GameSense",
+  "short": "gamesense",
+  "description": "GameSense 主题：skeet 风格的菜单窗口——左侧分类标签、分组框、细滑条和彩虹顶线，带水印与离线列表",
+  "version": "0.0.0",
+  "author": "wugan666",
+  "url": "https://github.com/wugan666/komari-theme-gamesense",
+  "preview": "preview.png",
+  "configuration": {
+    "type": "managed",
+    "name": "GameSense 设置",
+    "data": [
+      {
+        "name": "基础设置",
+        "type": "title"
+      },
+      {
+        "key": "dataUpdateInterval",
+        "name": "数据更新间隔",
+        "type": "number",
+        "default": 3,
+        "help": "实时数据刷新间隔，单位：秒（建议 1-10 秒）"
+      },
+      {
+        "key": "rpcTransportMode",
+        "name": "RPC 连接模式",
+        "type": "select",
+        "default": "websocket",
+        "options": "websocket,http",
+        "help": "推荐 websocket，无法使用时选择 http"
+      },
+      {
+        "name": "界面",
+        "type": "title"
+      },
+      {
+        "key": "menuColor",
+        "name": "菜单颜色",
+        "type": "select",
+        "default": "green",
+        "options": "green,blue,purple,red,orange",
+        "help": "复选框、滑条和高亮的颜色，默认是经典的绿色"
+      },
+      {
+        "key": "panelGroupBy",
+        "name": "标签分类方式",
+        "type": "select",
+        "default": "group",
+        "options": "group,region",
+        "help": "group：按节点分组生成左侧标签（没有任何分组时自动按地区）；region：按地区"
+      },
+      {
+        "key": "showWatermark",
+        "name": "显示水印",
+        "type": "switch",
+        "default": true,
+        "help": "右上角的水印条：站点名、在线数、网速、时间"
+      },
+      {
+        "key": "showOfflineList",
+        "name": "显示离线列表",
+        "type": "switch",
+        "default": true,
+        "help": "有节点离线时显示一个离线节点小窗口"
+      },
+      {
+        "key": "hideAdminEntryWhenLoggedOut",
+        "name": "隐藏后台入口",
+        "type": "switch",
+        "default": false,
+        "help": "未登录时隐藏后台管理入口"
+      }
+    ]
+  }
+}

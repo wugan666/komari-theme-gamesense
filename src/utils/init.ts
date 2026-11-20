@@ -1,0 +1,448 @@
+/**
+ * 应用初始化模块
+ * 负责应用启动时的初始化流程和 WebSocket 连接管理
+ */
+
+import type { Client, KomariRpc, NodeStatus } from '@/utils/rpc'
+import { useAppStore } from '@/stores/app'
+import { useNodesStore } from '@/stores/nodes'
+import { getSharedApi } from '@/utils/api'
+import { getSharedRpc, RpcError } from '@/utils/rpc'
+
+/** 初始化配置 */
+interface InitConfig {
+  /** WebSocket 重连间隔（毫秒） */
+  wsReconnectInterval?: number
+  /** WebSocket 最大重连次数（失败后回落 POST） */
+  wsMaxReconnectAttempts?: number
+  /** 后端健康检查超时（毫秒） */
+  healthCheckTimeout?: number
+  /** POST 模式连续失败次数阈值 */
+  postFailureThreshold?: number
+}
+
+const DEFAULT_CONFIG: Required<InitConfig> = {
+  wsReconnectInterval: 3000,
+  wsMaxReconnectAttempts: 5,
+  healthCheckTimeout: 5000,
+  postFailureThreshold: 3,
+}
+
+/** 节点基本信息（配置、价格、到期日等）变化很慢，低频刷新即可 */
+const CLIENTS_REFRESH_INTERVAL_MS = 60_000
+
+/** 初始化状态管理 */
+class InitManager {
+  private config: Required<InitConfig>
+  private rpc: KomariRpc
+  private appStore: ReturnType<typeof useAppStore>
+  private nodesStore: ReturnType<typeof useNodesStore>
+  private pollTimer: ReturnType<typeof setInterval> | null = null
+  private isPolling = false
+  private isInitialized = false
+  private lastClientsFetchedAt = 0
+  private refreshingClients = false
+  private consecutiveFailures = 0
+  private destroyed = false
+  private onVisibilityChange: (() => void) | null = null
+  private useWebSocket: boolean | null = null // 根据主题配置决定
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  constructor(config: InitConfig = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config }
+    this.rpc = getSharedRpc()
+    this.appStore = useAppStore()
+    this.nodesStore = useNodesStore()
+  }
+
+  /**
+   * 获取轮询间隔（毫秒）
+   * 从 publicSettings.theme_settings.dataUpdateInterval 读取，默认 3 秒
+   */
+  private getPollInterval(): number {
+    const settings = this.appStore.publicSettings?.theme_settings
+    const interval = settings?.dataUpdateInterval
+    // 确保值在合理范围内（1-60秒）
+    if (typeof interval === 'number' && interval >= 1 && interval <= 60) {
+      return interval * 1000 // 转换为毫秒
+    }
+    return 3000 // 默认 3 秒
+  }
+
+  /**
+   * 执行初始化流程
+   */
+  async init(): Promise<void> {
+    if (this.isInitialized) {
+      console.warn('[InitManager] Already initialized')
+      return
+    }
+
+    try {
+      // Independent startup reads do not need three sequential round trips.
+      await Promise.all([this.fetchPublicSettings(), this.fetchUserInfo()])
+      if (this.appStore.publicSettings?.private_site && !this.appStore.isLoggedIn) {
+        location.replace('/admin/login?redirect=%2F')
+        this.appStore.loading = false
+        return
+      }
+
+      if (this.destroyed)
+        return
+
+      // 4. 获取节点信息和最新状态
+      await this.fetchNodesData()
+
+      if (this.destroyed)
+        return
+
+      // 5. 解除加载状态
+      this.appStore.loading = false
+
+      // 6. 建立 WebSocket 连接并开始轮询
+      this.startWebSocketAndPolling()
+
+      this.isInitialized = true
+    }
+    catch (error) {
+      console.error('[InitManager] Initialization failed:', error)
+      if (this.destroyed)
+        return
+      this.appStore.loading = false
+      this.appStore.connectionError = true
+      // An initial network failure must not leave the site empty forever.
+      this.startWebSocketAndPolling()
+      this.isInitialized = true
+    }
+  }
+
+  /**
+   * 获取服务端公开属性
+   */
+  private async fetchPublicSettings(): Promise<void> {
+    try {
+      const api = getSharedApi()
+      const publicSettings = await api.getPublicSettings()
+      this.appStore.publicSettings = publicSettings
+    }
+    catch (error) {
+      console.error('[InitManager] Failed to fetch public settings:', error)
+      // 非关键错误，继续初始化
+    }
+  }
+
+  /**
+   * 获取用户信息
+   */
+  private async fetchUserInfo(): Promise<void> {
+    try {
+      const api = getSharedApi()
+      const userInfo = await api.getMe()
+      this.appStore.updateLoginState(userInfo.logged_in)
+    }
+    catch (error) {
+      this.appStore.updateLoginState(false)
+      console.error('[InitManager] Failed to fetch user info:', error)
+      // 非关键错误，继续初始化
+    }
+  }
+
+  /**
+   * 获取节点数据和最新状态
+   */
+  private async fetchNodesData(): Promise<void> {
+    try {
+      // 并行获取节点信息和最新状态
+      const [clientsResult, statusesResult] = await Promise.all([
+        this.rpc.getNodes() as Promise<Record<string, Client>>,
+        this.rpc.getNodesLatestStatus() as Promise<Record<string, NodeStatus>>,
+      ])
+
+      if (this.destroyed)
+        return
+      // 初始化节点数据
+      this.nodesStore.initNodes(clientsResult, statusesResult)
+      this.lastClientsFetchedAt = Date.now()
+    }
+    catch (error) {
+      console.error('[InitManager] Failed to fetch nodes data:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 启动 WebSocket 连接和轮询
+   */
+  private startWebSocketAndPolling(): void {
+    // 根据主题配置决定初始连接模式
+    const configuredMode = this.appStore.rpcTransportMode
+    this.useWebSocket = configuredMode === 'websocket'
+
+    if (this.useWebSocket) {
+      // 尝试建立 WebSocket 连接
+      this.connectWebSocket()
+    }
+    else {
+      // HTTP 模式：直接设置 RPC 客户端为 HTTP 模式
+      const client = this.rpc.getClient()
+      client.setTransport(false)
+      this.nodesStore.updateWsState('disconnected', this.config.wsMaxReconnectAttempts)
+    }
+
+    // 开始轮询（作为 WebSocket 的补充或备选方案）
+    this.startPolling()
+  }
+
+  /**
+   * 建立 WebSocket 连接
+   */
+  private async connectWebSocket(): Promise<void> {
+    // 如果已回落到 POST 模式或配置为 HTTP 模式，不再尝试 WebSocket
+    if (this.destroyed || this.useWebSocket === false) {
+      return
+    }
+
+    const client = this.rpc.getClient()
+
+    // 切换到 WebSocket 模式
+    client.setTransport(true)
+    this.nodesStore.updateWsState('connecting', this.nodesStore.wsReconnectAttempts)
+
+    try {
+      // 使用 ping 验证连接，10 秒超时
+      await client.ensureWebSocketConnectedWithPing(10000)
+      if (this.destroyed)
+        return
+      this.nodesStore.updateWsState('connected', 0)
+
+      // 监听连接状态变化
+      this.monitorWebSocketConnection()
+    }
+    catch (error) {
+      console.error('[InitManager] WebSocket connection failed:', error)
+      this.nodesStore.updateWsState('disconnected')
+      this.scheduleReconnect()
+    }
+  }
+
+  /**
+   * 监控 WebSocket 连接状态
+   */
+  private monitorWebSocketConnection(): void {
+    const client = this.rpc.getClient()
+    const ws = client.getWebSocket()
+
+    if (!ws) {
+      return
+    }
+
+    ws.addEventListener('close', () => {
+      // 如果当前是已连接状态且还在使用 WebSocket 模式，触发重连
+      if (this.useWebSocket === true && this.nodesStore.wsConnectionState === 'connected') {
+        this.nodesStore.updateWsState('disconnected')
+        this.scheduleReconnect()
+      }
+    }, { once: true })
+
+    ws.addEventListener('error', () => {
+      console.error('[InitManager] WebSocket error')
+    })
+  }
+
+  /**
+   * 安排重连
+   */
+  private scheduleReconnect(): void {
+    if (this.destroyed || this.useWebSocket === false)
+      return
+    const attempts = this.nodesStore.wsReconnectAttempts
+
+    // 达到最大重连次数，回落到 POST 模式
+    if (attempts >= this.config.wsMaxReconnectAttempts) {
+      console.error('[InitManager] Max reconnect attempts reached, falling back to POST mode')
+      this.fallbackToPostMode()
+      return
+    }
+
+    // 首次失败时显示提示
+    if (attempts === 0) {
+      window.$message?.error('WebSocket 建立失败，正在尝试重连。')
+    }
+
+    this.nodesStore.updateWsState('reconnecting', attempts + 1)
+
+    if (this.reconnectTimer)
+      clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = setTimeout(async () => {
+      try {
+        const client = this.rpc.getClient()
+        client.close()
+        await this.connectWebSocket()
+      }
+      catch (error) {
+        console.error('[InitManager] Reconnect failed:', error)
+        this.scheduleReconnect()
+      }
+    }, this.config.wsReconnectInterval)
+  }
+
+  /**
+   * 回落到 POST 模式
+   */
+  private fallbackToPostMode(): void {
+    this.useWebSocket = false
+    this.nodesStore.updateWsState('disconnected', this.config.wsMaxReconnectAttempts)
+
+    // 关闭 WebSocket 连接
+    const client = this.rpc.getClient()
+    client.setTransport(false)
+    client.close()
+
+    // 显示提示
+    window.$message?.warning('WebSocket 无法连接，尝试回落 POST 模式。')
+  }
+
+  /**
+   * 开始轮询
+   */
+  private startPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer)
+    }
+
+    this.pollTimer = setInterval(() => {
+      this.poll()
+    }, this.getPollInterval())
+
+    // 页面重新可见时立即补一次轮询（poll 在 document.hidden 时会跳过）
+    if (!this.onVisibilityChange) {
+      this.onVisibilityChange = () => {
+        if (!document.hidden)
+          this.poll()
+      }
+      document.addEventListener('visibilitychange', this.onVisibilityChange)
+    }
+  }
+
+  /**
+   * 执行轮询任务
+   */
+  private async poll(): Promise<void> {
+    if (this.destroyed || this.isPolling) {
+      return
+    }
+
+    // 页面不可见时暂停轮询，回到前台由 visibilitychange 立即补一次
+    if (document.hidden) {
+      return
+    }
+
+    this.isPolling = true
+
+    try {
+      // Metadata refresh is independent: a slow config read cannot hold up
+      // live status. The status response itself proves connectivity.
+      const now = Date.now()
+      if (!this.refreshingClients && now - this.lastClientsFetchedAt >= CLIENTS_REFRESH_INTERVAL_MS) {
+        this.refreshingClients = true
+        void this.rpc.getNodes().then((clients) => {
+          if (this.destroyed)
+            return
+          this.nodesStore.updateNodeClients(clients as Record<string, Client>)
+          this.lastClientsFetchedAt = Date.now()
+        }).catch((error) => {
+          console.warn('[InitManager] Metadata refresh failed:', error)
+        }).finally(() => { this.refreshingClients = false })
+      }
+      const statusesResult = await this.rpc.getNodesLatestStatus() as Record<string, NodeStatus>
+      if (this.destroyed)
+        return
+
+      // 更新节点状态
+      this.nodesStore.updateNodeStatuses(statusesResult)
+      this.consecutiveFailures = 0
+
+      // 连接恢复正常，重置错误状态
+      this.appStore.connectionError = false
+    }
+    catch (error) {
+      if (error instanceof RpcError) {
+        console.error('[InitManager] Poll RPC error:', error.message)
+      }
+      else {
+        console.error('[InitManager] Poll error:', error)
+      }
+
+      if (!this.destroyed) {
+        this.consecutiveFailures++
+        this.appStore.connectionError = this.nodesStore.lastStatusReceivedAt === null
+          || this.consecutiveFailures >= this.config.postFailureThreshold
+      }
+    }
+    finally {
+      this.isPolling = false
+    }
+  }
+
+  async refresh(): Promise<void> {
+    await this.poll()
+  }
+
+  /**
+   * 停止轮询
+   */
+  stopPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer)
+      this.pollTimer = null
+    }
+    if (this.onVisibilityChange) {
+      document.removeEventListener('visibilitychange', this.onVisibilityChange)
+      this.onVisibilityChange = null
+    }
+  }
+
+  /**
+   * 销毁管理器
+   */
+  destroy(): void {
+    this.destroyed = true
+    this.useWebSocket = false
+    if (this.reconnectTimer)
+      clearTimeout(this.reconnectTimer)
+    this.stopPolling()
+    this.rpc.close()
+    this.nodesStore.clearNodes()
+    this.isInitialized = false
+  }
+}
+
+// 单例实例
+let initManager: InitManager | null = null
+
+/**
+ * 初始化应用
+ */
+export async function initApp(): Promise<void> {
+  if (!initManager) {
+    initManager = new InitManager()
+  }
+
+  await initManager.init()
+}
+
+/**
+ * 获取初始化管理器实例
+ */
+export function getInitManager(): InitManager | null {
+  return initManager
+}
+
+/**
+ * 销毁初始化管理器
+ */
+export function destroyInitManager(): void {
+  if (initManager) {
+    initManager.destroy()
+    initManager = null
+  }
+}
