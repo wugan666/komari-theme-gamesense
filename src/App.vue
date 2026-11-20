@@ -68,9 +68,6 @@ onUnmounted(() => destroyInitManager())
     <div class="sk-backdrop" aria-hidden="true" />
     <LoadingCover v-if="appStore.loading" />
     <header class="sk-topbar">
-      <button v-if="!isHome" type="button" class="sk-button sk-button-inline" @click="router.push('/')">
-        ← Back to menu
-      </button>
       <span class="flex-1" />
       <!-- 水印：站点名 | 在线 | 网速 | 时间 -->
       <div v-if="config.get('watermark')" class="sk-watermark" aria-label="状态水印">
