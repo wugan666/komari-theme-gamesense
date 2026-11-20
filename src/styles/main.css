@@ -261,3 +261,13 @@ html[data-animations='false'] *, html[data-animations='false'] *::before { anima
   .sk-tab { min-width: 4rem; min-height: 3.5rem; }
   .sk-content { max-height: none; }
 }
+
+/* ===== 节点详情页的可读性 ===== */
+.instance-detail { padding: 0.75rem 0.75rem 0; font-size: 0.8125rem; }
+.instance-detail .text-\[10px\], .instance-detail .text-\[11px\] { font-size: 0.75rem; line-height: 1.45; }
+.instance-detail .text-xs { font-size: 0.78125rem; line-height: 1.5; }
+.instance-detail .text-muted-foreground { color: #b4b4b4; }
+.instance-detail .glass-surface, .instance-detail .bg-card { background-color: #191919; border-color: #3a3a3a; box-shadow: inset 0 0 0 1px #0a0a0a; }
+.instance-detail .bg-muted\/50, .instance-detail .bg-muted\/40, .instance-detail .bg-muted { background-color: #222222; }
+.instance-detail [role='tab'] { color: rgba(255, 255, 255, 0.74); }
+.instance-detail [role='tab'][data-state='active'] { color: #fff; }

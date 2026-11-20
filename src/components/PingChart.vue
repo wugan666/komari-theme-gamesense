@@ -28,9 +28,9 @@ const rpc = getSharedRpc()
 
 // 图表主题相关颜色
 const chartThemeColors = computed(() => ({
-  text: isDark.value ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
-  textSecondary: isDark.value ? 'rgba(255, 255, 255, 0.55)' : 'rgba(0, 0, 0, 0.55)',
-  textTertiary: isDark.value ? 'rgba(255, 255, 255, 0.35)' : 'rgba(0, 0, 0, 0.35)',
+  text: 'rgba(255, 255, 255, 0.92)',
+  textSecondary: 'rgba(255, 255, 255, 0.78)',
+  textTertiary: 'rgba(255, 255, 255, 0.56)',
   borderColor: isDark.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
   splitLineColor: isDark.value ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
   tooltipBg: isDark.value ? 'rgba(40, 40, 40, 0.95)' : 'rgba(255, 255, 255, 0.8)',
@@ -503,14 +503,14 @@ const pingChartOption = computed(() => {
       itemHeight: 12,
       itemGap: 16,
       icon: 'roundRect',
-      textStyle: { fontSize: 11, color: chartThemeColors.value.textSecondary },
+      textStyle: { fontSize: 12, color: chartThemeColors.value.textSecondary },
       data: taskList.map(t => t.name),
     },
     grid: chartMargin,
     xAxis: {
       type: 'time',
       axisLabel: {
-        fontSize: 11,
+        fontSize: 12,
         color: chartThemeColors.value.textSecondary,
         margin: 12,
         formatter: (time: number) => formatTime(time, showDateInAxis.value),
@@ -525,7 +525,7 @@ const pingChartOption = computed(() => {
       type: 'value',
       name: '延迟 (ms)',
       nameTextStyle: { color: chartThemeColors.value.textSecondary },
-      axisLabel: { fontSize: 11, color: chartThemeColors.value.textSecondary, formatter: '{value}' },
+      axisLabel: { fontSize: 12, color: chartThemeColors.value.textSecondary, formatter: '{value}' },
       axisLine: { show: false },
       axisTick: { show: false },
       splitLine: {

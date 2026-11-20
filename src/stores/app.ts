@@ -409,12 +409,8 @@ const useAppStore = defineStore('app', () => {
   }, { immediate: true })
 
   // 计算当前是否为暗色模式
-  const isDark = computed(() => {
-    if (themeMode.value === 'auto') {
-      return prefersDark.value
-    }
-    return themeMode.value === 'dark'
-  })
+  // 这个主题只有深色外观：不跟随访客系统的浅色 / 深色设置
+  const isDark = computed(() => true)
 
   const resolvedThemeMode = computed<'light' | 'dark'>(() => isDark.value ? 'dark' : 'light')
 

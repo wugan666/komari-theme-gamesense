@@ -59,9 +59,9 @@ const chartColors = {
 
 // 图表主题相关颜色
 const chartThemeColors = computed(() => ({
-  text: isDark.value ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
-  textSecondary: isDark.value ? 'rgba(255, 255, 255, 0.55)' : 'rgba(0, 0, 0, 0.55)',
-  textTertiary: isDark.value ? 'rgba(255, 255, 255, 0.35)' : 'rgba(0, 0, 0, 0.35)',
+  text: 'rgba(255, 255, 255, 0.92)',
+  textSecondary: 'rgba(255, 255, 255, 0.78)',
+  textTertiary: 'rgba(255, 255, 255, 0.56)',
   borderColor: isDark.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
   splitLineColor: isDark.value ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
   tooltipBg: isDark.value ? 'rgba(40, 40, 40, 0.95)' : 'rgba(255, 255, 255, 0.8)',
@@ -125,13 +125,13 @@ const availableViews = computed(() => {
   const maxPreset = presetViews.at(-1)
   if (maxPreset && maxHours > maxPreset.hours) {
     const label = maxHours % 24 === 0
-      ? `${Math.floor(maxHours / 24)} 天`
+      ? (maxHours >= 24 * 3650 ? '全部' : `${Math.floor(maxHours / 24)} 天`)
       : `${maxHours} 小时`
     views.push({ label, hours: maxHours })
   }
   else if (maxHours > 4 && !presetViews.some(v => v.hours === maxHours)) {
     const label = maxHours % 24 === 0
-      ? `${Math.floor(maxHours / 24)} 天`
+      ? (maxHours >= 24 * 3650 ? '全部' : `${Math.floor(maxHours / 24)} 天`)
       : `${maxHours} 小时`
     views.push({ label, hours: maxHours })
   }
@@ -457,7 +457,7 @@ const baseXAxisConfig = computed(() => ({
   type: 'category' as const,
   data: chartData.value.map(r => formatTime(r.time, showDateInAxis.value)),
   axisLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: chartThemeColors.value.textSecondary,
     margin: 12,
   },
@@ -473,7 +473,7 @@ const baseXAxisConfig = computed(() => ({
 const baseYAxisConfig = computed(() => ({
   type: 'value' as const,
   axisLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: chartThemeColors.value.textSecondary,
   },
   axisLine: { show: false },
@@ -766,7 +766,7 @@ const networkChartOption = computed(() => ({
     itemHeight: 12,
     itemGap: 20,
     icon: 'roundRect',
-    textStyle: { fontSize: 11, color: chartThemeColors.value.textSecondary },
+    textStyle: { fontSize: 12, color: chartThemeColors.value.textSecondary },
   },
   grid: chartMarginWithLegend,
   xAxis: baseXAxisConfig.value,
@@ -836,7 +836,7 @@ const connectionsChartOption = computed(() => ({
     itemHeight: 12,
     itemGap: 20,
     icon: 'roundRect',
-    textStyle: { fontSize: 11, color: chartThemeColors.value.textSecondary },
+    textStyle: { fontSize: 12, color: chartThemeColors.value.textSecondary },
   },
   grid: chartMarginWithLegend,
   xAxis: baseXAxisConfig.value,
