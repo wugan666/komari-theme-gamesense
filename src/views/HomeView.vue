@@ -112,11 +112,13 @@ const columnsClass = computed(() => `sk-columns-${config.get<string>('columns')}
         <nav class="sk-tabs" aria-label="分类">
           <button type="button" class="sk-tab" :class="{ 'sk-tab-active': activeTab === 'all' }" title="全部节点" @click="activeTab = 'all'">
             <Icon icon="tabler:server-2" width="22" /><small>All</small>
+            <em>{{ nodesStore.nodes.length - offline.length }}/{{ nodesStore.nodes.length }}</em>
           </button>
           <button v-for="tab in tabs" :key="tab.name" type="button" class="sk-tab" :class="{ 'sk-tab-active': activeTab === tab.name }" :title="`${tab.name}（${tab.online}/${tab.count} 在线）`" @click="activeTab = tab.name">
             <img v-if="tab.flag" :src="`/images/flags/${tab.flag}.svg`" alt="">
             <b v-else>{{ tab.name.slice(0, 2) }}</b>
             <small>{{ tab.name }}</small>
+            <em>{{ tab.online }}/{{ tab.count }}</em>
           </button>
           <button type="button" class="sk-tab" :class="{ 'sk-tab-active': activeTab === 'visuals' }" title="菜单与显示设置" @click="activeTab = 'visuals'">
             <Icon icon="tabler:eye" width="22" /><small>Visuals</small>
